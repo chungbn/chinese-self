@@ -25,7 +25,7 @@ Push lên `main` sẽ tự deploy lên GitHub Pages (`.github/workflows/deploy.y
 ## Cấu trúc
 
 ```
-src/data/        dữ liệu: hsk1.ts (150 từ, 10 bài), pinyin.ts (thanh điệu, thanh mẫu, vận mẫu)
+src/data/        dữ liệu: hsk1.ts (298 từ, 20 bài), pinyin.ts, sources/ (danh sách HSK gốc để đối chiếu)
 src/lib/         pinyin (định dạng, chấm câu trả lời gõ), tts, shuffle
 src/db/          Dexie schema + thao tác (hoàn thành bài, chấm thẻ, sao lưu)
 src/srs/         bọc ts-fsrs (FSRS-6)
@@ -34,6 +34,7 @@ src/pages/       Home, PinyinPage, Lessons, LessonDetail, LessonLearn, Review, D
 
 ## Dữ liệu
 
+HSK 1 bám theo danh sách HSK 3.0 bản 2025 (lấy từ [complete-hsk-vocabulary](https://github.com/drkameleon/complete-hsk-vocabulary), giấy phép MIT); test kiểm tra đủ từ và pinyin khớp danh sách gốc.
 Nghĩa tiếng Việt, âm Hán Việt và câu ví dụ do AI soạn. `src/data/data.test.ts` tự động kiểm tra
 số âm tiết pinyin và số âm Hán Việt có khớp số chữ Hán không, mỗi âm tiết có đúng định dạng và tối đa một dấu thanh.
 Thêm từ mới: thêm bài vào `RAW` trong file dữ liệu tương ứng, rồi chạy `npm test`.

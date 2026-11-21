@@ -49,7 +49,7 @@ export default function Lessons() {
           </section>
         );
       })}
-      <p className="text-sm text-stone-500">HSK 2–4 sẽ được bổ sung dần.</p>
+      <p className="text-sm text-stone-500">HSK 1 theo chuẩn HSK 3.0 (bản 2025). HSK 2 trở lên sẽ được bổ sung dần.</p>
     </div>
   );
 }

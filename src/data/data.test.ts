@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { LESSONS, WORDS } from "./index";
 import { syllables } from "../lib/pinyin";
+import official from "./sources/hsk1-official.json";
 
 const TONED = /[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]/g;
 // Âm tiết pinyin hợp lệ về hình thức: phụ âm đầu (tuỳ chọn) + vận mẫu + (n|ng|r) tuỳ chọn
@@ -17,8 +18,10 @@ describe("dữ liệu từ vựng", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("HSK 1 có đúng 150 từ", () => {
-    expect(WORDS.filter((w) => w.level === 1)).toHaveLength(150);
+  it("có đủ mọi từ trong danh sách HSK 1 chính thức", () => {
+    const mine = new Set(WORDS.filter((w) => w.level === 1).map((w) => w.hanzi));
+    const missing = official.words.map((o) => o.h).filter((h) => !mine.has(h));
+    expect(missing).toEqual([]);
   });
 
   it("mỗi bài tham chiếu tới từ tồn tại", () => {
@@ -54,6 +57,38 @@ describe("dữ liệu từ vựng", () => {
         expect(py.length).toBeGreaterThan(0);
         expect(vi.length).toBeGreaterThan(0);
       });
+    });
+  }
+});
+
+/** Tách pinyin của danh sách gốc ("hǎo wán r") thành âm tiết, gộp "r" của 儿化 vào âm trước. */
+function officialSyllables(py: string): string[] {
+  const out: string[] = [];
+  for (const t of py.toLowerCase().replace(/'/g, " ").split(/\s+/).filter(Boolean)) {
+    if (t === "r" && out.length) out[out.length - 1] += "r";
+    else out.push(t);
+  }
+  return out;
+}
+
+const stripTone = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC");
+
+describe("đối chiếu pinyin với danh sách HSK chính thức", () => {
+  const byHanzi = new Map(WORDS.map((w) => [w.hanzi, w]));
+  for (const o of official.words) {
+    const w = byHanzi.get(o.h);
+    if (!w) continue;
+    it(`${o.h}: ${w.py} khớp ${o.py.join(" / ")}`, () => {
+      const mine = syllables(w.py).map((s) => s.toLowerCase());
+      const chars = [...w.hanzi];
+      // 一 và 不 được phép ghi theo biến điệu (yí/yì, bú) — chỉ so phần không dấu ở các vị trí này
+      const sandhi = new Set(chars.flatMap((c, i) => (c === "一" || c === "不" ? [i] : [])));
+      const matches = o.py.some((form) => {
+        const ref = officialSyllables(form);
+        if (ref.length !== mine.length) return false;
+        return ref.every((r, i) => (sandhi.has(i) ? stripTone(r) === stripTone(mine[i]) : r === mine[i]));
+      });
+      expect(matches).toBe(true);
     });
   }
 });
