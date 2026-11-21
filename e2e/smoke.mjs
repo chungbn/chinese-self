@@ -63,6 +63,11 @@ await page.getByText("Hôm nay học gì?").waitFor();
 await page.waitForTimeout(300);
 await page.screenshot({ path: `${OUT}/08-home-after.png`, fullPage: true });
 
+await page.getByRole("button", { name: "Xem lịch hoàn thành" }).click();
+await page.getByText("Chuỗi ngày hoàn thành").waitFor();
+await page.screenshot({ path: `${OUT}/10-calendar.png` });
+await page.keyboard.press("Escape");
+
 await page.setViewportSize({ width: 1200, height: 900 });
 await page.emulateMedia({ colorScheme: "dark" });
 await page.screenshot({ path: `${OUT}/09-home-desktop-dark.png`, fullPage: true });

@@ -7,6 +7,7 @@ import LessonLearn from "./pages/LessonLearn";
 import Review from "./pages/Review";
 import Dictionary from "./pages/Dictionary";
 import Settings from "./pages/Settings";
+import { PlanTracker } from "./components/PlanTracker";
 
 const NAV = [
   { to: "/", label: "Hôm nay", icon: "☀" },
@@ -42,6 +43,7 @@ function Nav() {
 export default function App() {
   return (
     <HashRouter>
+      <PlanTracker />
       <Nav />
       <main className="mx-auto max-w-3xl px-4 pt-4 pb-24 sm:pb-10">
         <Routes>

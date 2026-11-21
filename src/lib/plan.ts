@@ -201,3 +201,10 @@ export function buildDailyPlan(input: PlanInput): DailyPlan {
 
   return { phase, phaseLabel, progress, tasks, note };
 }
+
+/** Số việc bắt buộc đã xong / tổng số (việc tuỳ chọn không tính). */
+export function planStatus(plan: DailyPlan): { done: number; total: number; allDone: boolean } {
+  const required = plan.tasks.filter((t) => t.done !== null);
+  const done = required.filter((t) => t.done).length;
+  return { done, total: required.length, allDone: required.length > 0 && done === required.length };
+}

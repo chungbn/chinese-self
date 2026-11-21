@@ -1,6 +1,9 @@
 import { LESSON_BY_ID } from "../data";
 import { getScheduler, type Grade } from "../srs/scheduler";
-import { db, SKILLS, type CardRow, type LessonRow, type ReviewRow } from "./db";
+import { dayKey } from "../lib/streak";
+import { db, SKILLS, type CardRow, type DayRow, type LessonRow, type ReviewRow } from "./db";
+
+export { dayKey };
 
 /** Đánh dấu hoàn thành bài và đưa các từ vào lịch ôn (bỏ qua thẻ đã có). */
 export async function completeLesson(lessonId: string): Promise<number> {
@@ -53,6 +56,7 @@ type Backup = {
   cards: CardRow[];
   reviews: ReviewRow[];
   lessons: LessonRow[];
+  days?: DayRow[];
 };
 
 export async function exportBackup(): Promise<string> {
@@ -63,6 +67,7 @@ export async function exportBackup(): Promise<string> {
     cards: await db.cards.toArray(),
     reviews: await db.reviews.toArray(),
     lessons: await db.lessons.toArray(),
+    days: await db.days.toArray(),
   };
   return JSON.stringify(data);
 }
@@ -80,40 +85,52 @@ export async function importBackup(json: string): Promise<void> {
   })) as CardRow[];
   const reviews = data.reviews.map((r) => ({ ...r, at: d(r.at) as Date }));
   const lessons = data.lessons.map((l) => ({ ...l, completedAt: d(l.completedAt) as Date }));
-  await db.transaction("rw", db.cards, db.reviews, db.lessons, async () => {
-    await Promise.all([db.cards.clear(), db.reviews.clear(), db.lessons.clear()]);
+  const days = (data.days ?? []).map((x) => ({
+    ...x,
+    updatedAt: d(x.updatedAt) as Date,
+    completedAt: (d(x.completedAt) ?? undefined) as Date | undefined,
+  }));
+  await db.transaction("rw", [db.cards, db.reviews, db.lessons, db.days], async () => {
+    await Promise.all([db.cards.clear(), db.reviews.clear(), db.lessons.clear(), db.days.clear()]);
     await db.cards.bulkAdd(cards);
     await db.reviews.bulkAdd(reviews);
     await db.lessons.bulkAdd(lessons);
+    await db.days.bulkAdd(days);
   });
 }
 
 export async function resetAll(): Promise<void> {
-  await db.transaction("rw", db.cards, db.reviews, db.lessons, async () => {
-    await Promise.all([db.cards.clear(), db.reviews.clear(), db.lessons.clear()]);
+  await db.transaction("rw", [db.cards, db.reviews, db.lessons, db.days, db.meta], async () => {
+    await Promise.all([db.cards.clear(), db.reviews.clear(), db.lessons.clear(), db.days.clear(), db.meta.clear()]);
+  });
+}
+
+/**
+ * Ghi tiến độ kế hoạch của một ngày. Đã hoàn thành thì giữ nguyên (không bị «rớt» khi
+ * có thẻ mới đến hạn sau đó trong ngày).
+ */
+export async function recordDayProgress(key: string, tasksDone: number, tasksTotal: number, now = new Date()): Promise<void> {
+  await db.transaction("rw", db.days, async () => {
+    const row = await db.days.get(key);
+    const nowComplete = tasksTotal > 0 && tasksDone >= tasksTotal;
+    if (row?.completed) {
+      if (row.tasksDone !== tasksDone || row.tasksTotal !== tasksTotal)
+        await db.days.put({ ...row, tasksDone: Math.max(row.tasksDone, tasksDone), tasksTotal: row.tasksTotal, updatedAt: now });
+      return;
+    }
+    if (row && row.tasksDone === tasksDone && row.tasksTotal === tasksTotal && !nowComplete) return;
+    await db.days.put({
+      key,
+      completed: nowComplete,
+      tasksDone,
+      tasksTotal,
+      completedAt: nowComplete ? now : undefined,
+      updatedAt: now,
+    });
   });
 }
 
 // ---------- Thống kê ----------
-
-export function dayKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
-}
-
-/** Số ngày học liên tiếp tính đến hôm nay (hoặc hôm qua nếu hôm nay chưa học). */
-export function computeStreak(reviewDays: Set<string>, today = new Date()): number {
-  const cursor = new Date(today);
-  if (!reviewDays.has(dayKey(cursor))) cursor.setDate(cursor.getDate() - 1);
-  let streak = 0;
-  while (reviewDays.has(dayKey(cursor))) {
-    streak++;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-  return streak;
-}
 
 // ---------- Theo dõi việc học pinyin trong ngày (cho kế hoạch hằng ngày) ----------
 

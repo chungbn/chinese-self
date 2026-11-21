@@ -1,37 +1,23 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router";
-import { LESSONS } from "../data";
-import { computeStreak, dayKey, ensureStartedAt } from "../db/actions";
 import { db } from "../db/db";
+import { useDailyPlan } from "../hooks/useDailyPlan";
 import { useNow } from "../hooks/useNow";
-import { buildDailyPlan, type DailyPlan, type PinyinTab, type PlanTask } from "../lib/plan";
+import { planStatus, type DailyPlan, type PlanTask } from "../lib/plan";
+import { computeStreak, dayKey } from "../lib/streak";
+import { StreakCalendar } from "../components/StreakCalendar";
 import { PageTitle, Stat } from "../components/ui";
 
 export default function Home() {
   const now = useNow();
   const today = dayKey(now);
-  const [startedAt, setStartedAt] = useState<Date | null>(null);
-  useEffect(() => {
-    ensureStartedAt().then(setStartedAt);
-  }, []);
+  const plan = useDailyPlan(now);
+  const [showCalendar, setShowCalendar] = useState(false);
 
-  const dueCount = useLiveQuery(() => db.cards.where("dueAt").belowOrEqual(now).count(), [now.getTime()]);
-  const totalCards = useLiveQuery(() => db.cards.count()) ?? 0;
   const learnedWords = useLiveQuery(async () => new Set(await db.cards.orderBy("wordId").uniqueKeys()).size) ?? 0;
-  const completed = useLiveQuery(() => db.lessons.toArray());
-  const meta = useLiveQuery(async () => {
-    const [pinyinDone, drill, tabs] = await Promise.all([
-      db.meta.get("pinyinDone"),
-      db.meta.get(`drill:${today}`),
-      db.meta.get(`pinyinTabs:${today}`),
-    ]);
-    return {
-      pinyinDone: pinyinDone?.value === true,
-      drillToday: (drill?.value as number | undefined) ?? 0,
-      pinyinTabsToday: (tabs?.value as PinyinTab[] | undefined) ?? [],
-    };
-  }, [today]);
+  const completedDays = useLiveQuery(async () => new Set((await db.days.toArray()).filter((d) => d.completed).map((d) => d.key)));
+  const todayDone = completedDays?.has(today) ?? false;
   const reviewDays = useLiveQuery(async () => {
     const since = new Date(now);
     since.setDate(since.getDate() - 400);
@@ -54,21 +40,7 @@ export default function Home() {
   }, [now.getTime()]);
 
   const todayReviews = reviewDays?.get(today) ?? 0;
-  const streak = reviewDays ? computeStreak(new Set(reviewDays.keys()), now) : 0;
-
-  const plan =
-    startedAt && meta && completed && dueCount !== undefined
-      ? buildDailyPlan({
-          now,
-          startedAt,
-          ...meta,
-          dueCount,
-          totalCards,
-          reviewedToday: todayReviews,
-          lessons: LESSONS.map((l) => ({ id: l.id, order: l.order, title: l.title, wordCount: l.wordIds.length })),
-          completed,
-        })
-      : null;
+  const streak = completedDays ? computeStreak(completedDays, now) : 0;
 
   return (
     <div className="space-y-4">
@@ -76,13 +48,16 @@ export default function Home() {
         Hôm nay học gì?
       </PageTitle>
 
-      {plan ? <PlanCard plan={plan} /> : <div className="card h-40 animate-pulse" />}
+      {plan ? <PlanCard plan={plan} completedToday={todayDone} /> : <div className="card h-40 animate-pulse" />}
 
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Từ đã học" value={learnedWords} />
         <Stat label="Lượt ôn hôm nay" value={todayReviews} />
-        <Stat label="Chuỗi ngày" value={`${streak} 🔥`} />
+        <button onClick={() => setShowCalendar(true)} className="text-left transition hover:opacity-80" aria-label="Xem lịch hoàn thành">
+          <Stat label="Chuỗi hoàn thành ›" value={`${streak} ${todayDone ? "🔥" : "⏳"}`} />
+        </button>
       </div>
+      {showCalendar && <StreakCalendar now={now} onClose={() => setShowCalendar(false)} />}
 
       {forecast && (
         <div className="card">
@@ -109,10 +84,8 @@ export default function Home() {
   );
 }
 
-function PlanCard({ plan }: { plan: DailyPlan }) {
-  const required = plan.tasks.filter((t) => t.done !== null);
-  const doneCount = required.filter((t) => t.done).length;
-  const allDone = required.length > 0 && doneCount === required.length;
+function PlanCard({ plan, completedToday }: { plan: DailyPlan; completedToday: boolean }) {
+  const { done: doneCount, total, allDone } = planStatus(plan);
   const firstTodo = plan.tasks.find((t) => t.done === false);
   return (
     <section className="card space-y-3">
@@ -122,7 +95,7 @@ function PlanCard({ plan }: { plan: DailyPlan }) {
           <h2 className="text-lg font-semibold">Kế hoạch hôm nay</h2>
         </div>
         <span className="text-sm text-stone-500">
-          {doneCount}/{required.length} việc
+          {doneCount}/{total} việc
         </span>
       </div>
       {plan.progress && (
@@ -141,9 +114,11 @@ function PlanCard({ plan }: { plan: DailyPlan }) {
           <TaskRow key={t.id} task={t} index={i + 1} highlight={t === firstTodo} />
         ))}
       </ol>
-      {allDone && (
+      {(allDone || completedToday) && (
         <p className="rounded-xl bg-green-100 p-3 text-sm text-green-800 dark:bg-green-950 dark:text-green-300">
-          Xong kế hoạch hôm nay 🎉 Mai quay lại để giữ chuỗi ngày học nhé.
+          {allDone
+            ? "Xong kế hoạch hôm nay 🎉 Mai quay lại để giữ chuỗi ngày hoàn thành nhé."
+            : "Hôm nay đã được tính hoàn thành ✓ Có thẻ mới đến hạn, ôn thêm nếu bạn còn thời gian."}
         </p>
       )}
       {plan.note && <p className="text-sm text-stone-500">{plan.note}</p>}
