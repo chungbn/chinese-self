@@ -1,6 +1,7 @@
-import { HashRouter, NavLink, Route, Routes } from "react-router";
+import { HashRouter, NavLink, Route, Routes, useLocation } from "react-router";
 import Home from "./pages/Home";
 import RoadmapPage from "./pages/RoadmapPage";
+import SessionPage from "./pages/SessionPage";
 import PinyinPage from "./pages/PinyinPage";
 import Lessons from "./pages/Lessons";
 import LessonDetail from "./pages/LessonDetail";
@@ -21,6 +22,9 @@ const NAV = [
 ];
 
 function Nav() {
+  const { pathname } = useLocation();
+  // Chế độ tập trung: ẩn menu để chỉ còn nội dung của việc đang làm
+  if (pathname.startsWith("/session")) return null;
   const cls = ({ isActive }: { isActive: boolean }) =>
     `flex flex-1 flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[11px] whitespace-nowrap sm:flex-none sm:flex-row sm:gap-2 sm:text-sm ${
       isActive ? "text-brand-700 dark:text-brand-500 font-semibold" : "text-stone-500 hover:text-stone-900 dark:hover:text-stone-100"
@@ -51,6 +55,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/roadmap" element={<RoadmapPage />} />
+          <Route path="/session/:taskId" element={<SessionPage />} />
           <Route path="/pinyin" element={<PinyinPage />} />
           <Route path="/lessons" element={<Lessons />} />
           <Route path="/lessons/:id" element={<LessonDetail />} />

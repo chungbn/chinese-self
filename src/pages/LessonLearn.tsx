@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { getWord, LESSON_BY_ID, WORDS, type Word } from "../data";
 import { completeLesson } from "../db/actions";
@@ -23,31 +23,94 @@ function buildQuiz(words: Word[]): QuizItem[] {
 export default function LessonLearn() {
   const { id = "" } = useParams();
   const lesson = LESSON_BY_ID.get(id);
+  if (!lesson) return <p>Không tìm thấy bài học.</p>;
+  return (
+    <LessonFlow
+      lessonId={id}
+      backLink={
+        <Link to={`/lessons/${id}`} className="hover:underline">
+          ‹ Bài {lesson.order}: {lesson.title}
+        </Link>
+      }
+    />
+  );
+}
+
+type Stage = "grammar" | "learn" | "quiz" | "done";
+
+/**
+ * Luồng học một bài: (ngữ pháp →) học từng từ → quiz → hoàn thành & đưa vào lịch ôn.
+ * `doneActions` thay các nút ở màn hình hoàn thành (dùng trong chế độ tập trung).
+ */
+export function LessonFlow({
+  lessonId,
+  withGrammar = false,
+  backLink,
+  doneActions,
+}: {
+  lessonId: string;
+  withGrammar?: boolean;
+  backLink?: ReactNode;
+  doneActions?: ReactNode;
+}) {
+  const lesson = LESSON_BY_ID.get(lessonId);
   const words = useMemo(() => (lesson ? lesson.wordIds.map(getWord) : []), [lesson]);
-  const [stage, setStage] = useState<"learn" | "quiz" | "done">("learn");
+  const [stage, setStage] = useState<Stage>(withGrammar ? "grammar" : "learn");
   const [i, setI] = useState(0);
 
   if (!lesson) return <p>Không tìm thấy bài học.</p>;
 
+  const steps: { id: Stage; label: string }[] = [
+    ...(withGrammar ? [{ id: "grammar" as const, label: "Ngữ pháp" }] : []),
+    { id: "learn", label: `Học từ${stage === "learn" ? ` ${i + 1}/${words.length}` : ""}` },
+    { id: "quiz", label: "Quiz" },
+    { id: "done", label: "Xong" },
+  ];
+  const cur = steps.findIndex((s) => s.id === stage);
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between text-sm text-stone-500">
-        <Link to={`/lessons/${id}`} className="hover:underline">
-          ‹ Bài {lesson.order}: {lesson.title}
-        </Link>
-        <span>{stage === "learn" ? `Từ ${i + 1}/${words.length}` : stage === "quiz" ? "Luyện tập" : "Hoàn thành"}</span>
+      <div className="flex items-center justify-between gap-2 text-sm text-stone-500">
+        <span className="min-w-0 truncate">{backLink ?? `Bài ${lesson.order}: ${lesson.title}`}</span>
+        <ol className="flex shrink-0 items-center gap-1 text-xs">
+          {steps.map((s, idx) => (
+            <li
+              key={s.id}
+              className={`rounded-full px-2 py-0.5 ${idx === cur ? "bg-brand-700 text-white" : idx < cur ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300" : "bg-stone-200 dark:bg-stone-800"}`}
+            >
+              {s.label}
+            </li>
+          ))}
+        </ol>
       </div>
-      {stage === "learn" && (
-        <LearnCards
-          words={words}
-          i={i}
-          setI={setI}
-          onFinish={() => setStage("quiz")}
-        />
-      )}
+      {stage === "grammar" && <GrammarStep lessonId={lessonId} onNext={() => setStage("learn")} />}
+      {stage === "learn" && <LearnCards words={words} i={i} setI={setI} onFinish={() => setStage("quiz")} />}
       {stage === "quiz" && <Quiz words={words} onFinish={() => setStage("done")} />}
-      {stage === "done" && <Done lessonId={id} />}
+      {stage === "done" && <Done lessonId={lessonId} actions={doneActions} />}
     </div>
+  );
+}
+
+function GrammarStep({ lessonId, onNext }: { lessonId: string; onNext: () => void }) {
+  const lesson = LESSON_BY_ID.get(lessonId)!;
+  return (
+    <>
+      <div className="card space-y-3">
+        <div>
+          <div className="text-xs font-medium tracking-wide text-brand-700 uppercase dark:text-brand-500">Bài {lesson.order}</div>
+          <h2 className="text-xl font-semibold">{lesson.title}</h2>
+          <p className="text-sm text-stone-500">Đọc qua các điểm ngữ pháp trước, rồi học {lesson.wordIds.length} từ mới.</p>
+        </div>
+        <ol className="list-decimal space-y-2 pl-5 text-stone-700 dark:text-stone-300">
+          {lesson.grammar.map((g, idx) => (
+            <li key={idx}>{g}</li>
+          ))}
+        </ol>
+      </div>
+      <button className="btn-primary w-full py-3" onClick={onNext} autoFocus>
+        Học từ mới ›
+      </button>
+    </>
   );
 }
 
@@ -173,7 +236,7 @@ function Quiz({ words, onFinish }: { words: Word[]; onFinish: () => void }) {
   );
 }
 
-function Done({ lessonId }: { lessonId: string }) {
+function Done({ lessonId, actions }: { lessonId: string; actions?: ReactNode }) {
   const [added, setAdded] = useState<number | null>(null);
   useEffect(() => {
     completeLesson(lessonId).then(setAdded);
@@ -185,14 +248,16 @@ function Done({ lessonId }: { lessonId: string }) {
       <p className="text-stone-500">
         {added === null ? "Đang lưu…" : added > 0 ? `Đã thêm ${added} thẻ vào lịch ôn tập.` : "Các từ trong bài đã có trong lịch ôn."}
       </p>
-      <div className="flex justify-center gap-2">
-        <Link to="/review" className="btn-primary">
-          Ôn tập ngay
-        </Link>
-        <Link to="/lessons" className="btn-ghost">
-          Về danh sách bài
-        </Link>
-      </div>
+      {actions ?? (
+        <div className="flex justify-center gap-2">
+          <Link to="/review" className="btn-primary">
+            Ôn tập ngay
+          </Link>
+          <Link to="/lessons" className="btn-ghost">
+            Về danh sách bài
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

@@ -25,11 +25,34 @@ export function drillModeFor(topicToday: PinyinTab | null, topicsSeen: readonly 
   return topicsSeen.includes("pitfalls") ? "mix" : "tones";
 }
 
+/** Phần pinyin nhỏ học trong một ngày (phần thanh mẫu/vận mẫu được chia làm 3 ngày). */
+export type PinyinTopic = "tones" | "initials" | "finals-1" | "finals-2" | "pitfalls" | "sandhi";
+
+/** Tab chung của trang Pinyin mà mỗi phần nhỏ thuộc về (dùng cho lộ trình & chế độ luyện nghe). */
+export const TOPIC_TAB: Record<PinyinTopic, PinyinTab> = {
+  tones: "tones",
+  initials: "sounds",
+  "finals-1": "sounds",
+  "finals-2": "sounds",
+  pitfalls: "pitfalls",
+  sandhi: "sandhi",
+};
+
+/** Nội dung hiển thị trong chế độ tập trung khi bấm vào một việc. */
+export type TaskSession =
+  | { kind: "pinyin-topic"; topic: PinyinTopic }
+  | { kind: "drill"; mode: DrillMode }
+  | { kind: "review" }
+  | { kind: "lesson"; lessonId: string }
+  | { kind: "reread"; lessonId: string };
+
 export type PlanTask = {
   id: string;
   title: string;
   detail?: string;
+  /** Đường dẫn chế độ tập trung: /session/<id> */
   to: string;
+  session: TaskSession;
   /** true = đã xong hôm nay; false = cần làm; null = gợi ý tuỳ chọn */
   done: boolean | null;
   /** "blocked": việc tạm hoãn kèm lý do */
@@ -52,9 +75,9 @@ export type PlanInput = {
   pinyinDone: boolean;
   /** Số câu luyện nghe pinyin đã làm hôm nay */
   drillToday: number;
-  /** Các tab pinyin đã mở hôm nay */
-  pinyinTabsToday: PinyinTab[];
-  /** Các tab pinyin từng mở (mọi ngày) */
+  /** Các phần pinyin đã học xong hôm nay (PinyinTopic hoặc tên tab) */
+  pinyinTabsToday: string[];
+  /** Các phần pinyin từng học xong (mọi ngày) */
   pinyinTopicsSeen: string[];
   dueCount: number;
   /** Tổng số thẻ đã có trong lịch ôn */
@@ -85,14 +108,19 @@ export function daysBetween(from: Date, to: Date): number {
   return Math.max(0, Math.round((startOfDay(to) - startOfDay(from)) / DAY_MS));
 }
 
-/** Chủ đề pinyin gợi ý theo ngày học. */
-export function pinyinTopicForDay(day: number): { tab: PinyinTab; title: string; detail: string } {
-  if (day <= 1) return { tab: "tones", title: "Học 4 thanh điệu", detail: "Nghe từng bộ âm (ma, ba, yi…) và đọc to theo" };
-  if (day <= 4) return { tab: "sounds", title: "Thanh mẫu & vận mẫu", detail: "Mỗi ngày nghe và đọc theo khoảng 1/3 bảng" };
-  if (day <= 6) return { tab: "pitfalls", title: "Các lỗi người Việt hay mắc", detail: "Tập kỹ các cặp zh/z, ch/c, sh/s, b/p, ü" };
-  if (day <= 8) return { tab: "sandhi", title: "Quy tắc biến điệu", detail: "3+3, thanh 3 nửa, 不 và 一" };
-  return { tab: "tones", title: "Ôn lại 4 thanh", detail: "Nghe lại các bộ âm, chú ý thanh 3 và thanh 4" };
+/** Phần pinyin gợi ý theo ngày học. */
+export function pinyinTopicForDay(day: number): { topic: PinyinTopic; tab: PinyinTab; title: string; detail: string } {
+  const t = (topic: PinyinTopic, title: string, detail: string) => ({ topic, tab: TOPIC_TAB[topic], title, detail });
+  if (day <= 1) return t("tones", "Học 4 thanh điệu", "Nghe từng bộ âm (ma, ba, yi…) và đọc to theo");
+  if (day === 2) return t("initials", "Thanh mẫu (phụ âm đầu)", "23 phụ âm đầu, chú ý cặp bật hơi / không bật hơi");
+  if (day === 3) return t("finals-1", "Vận mẫu — phần 1", "Vần đơn và vần ghép cơ bản: a, o, e, ai, ao, an, ang…");
+  if (day === 4) return t("finals-2", "Vận mẫu — phần 2", "Vần bắt đầu bằng i, u, ü: ia, ian, uo, uan, üe…");
+  if (day <= 6) return t("pitfalls", "Các lỗi người Việt hay mắc", "Tập kỹ các cặp zh/z, ch/c, sh/s, b/p, ü");
+  if (day <= 8) return t("sandhi", "Quy tắc biến điệu", "3+3, thanh 3 nửa, 不 và 一");
+  return t("tones", "Ôn lại 4 thanh", "Nghe lại các bộ âm, chú ý thanh 3 và thanh 4");
 }
+
+const sessionPath = (id: string) => `/session/${id}`;
 
 export function buildDailyPlan(input: PlanInput): DailyPlan {
   const { now, dueCount, totalCards, reviewedToday, pinyinDone } = input;
@@ -120,29 +148,33 @@ export function buildDailyPlan(input: PlanInput): DailyPlan {
       id: "review",
       title: `Ôn ${dueCount} thẻ đến hạn`,
       detail: "Làm trước khi học bài mới",
-      to: "/review",
+      to: sessionPath("review"),
+      session: { kind: "review" },
       done: false,
     });
   } else if (totalCards > 0) {
     tasks.push({
       id: "review",
       title: reviewedToday > 0 ? `Đã ôn xong (${reviewedToday} lượt hôm nay)` : "Không có thẻ đến hạn",
-      to: "/review",
+      to: sessionPath("review"),
+      session: { kind: "review" },
       done: true,
     });
   }
 
   // 2. Pinyin: chủ đề trong giai đoạn phát âm + luyện nghe hằng ngày cho tới khi nắm vững
   if (!pinyinDone) {
-    const topic = phase === "pinyin" ? pinyinTopicForDay(day) : null;
+    // Trong 2 tuần đầu vẫn học chủ đề pinyin mỗi ngày, kể cả khi đã bắt đầu học bài song song
+    const topic = day < PINYIN_PHASE_DAYS ? pinyinTopicForDay(day) : null;
     const mode = drillModeFor(topic?.tab ?? null, input.pinyinTopicsSeen);
     if (topic) {
       tasks.push({
         id: "pinyin-topic",
         title: topic.title,
         detail: topic.detail,
-        to: `/pinyin?tab=${topic.tab}`,
-        done: input.pinyinTabsToday.includes(topic.tab),
+        to: sessionPath("pinyin-topic"),
+        session: { kind: "pinyin-topic", topic: topic.topic },
+        done: input.pinyinTabsToday.includes(topic.topic),
       });
     }
     tasks.push({
@@ -154,7 +186,8 @@ export function buildDailyPlan(input: PlanInput): DailyPlan {
           : mode === "pairs"
             ? "Nghe và chọn đúng âm trong các cặp zh/z, b/p, an/ang…"
             : "Trộn câu hỏi thanh điệu và âm dễ nhầm",
-      to: `/pinyin?tab=drill&mode=${mode}`,
+      to: sessionPath("pinyin-drill"),
+      session: { kind: "drill", mode },
       done: input.drillToday >= DRILL_GOAL,
     });
   }
@@ -168,7 +201,8 @@ export function buildDailyPlan(input: PlanInput): DailyPlan {
       tasks.push({
         id: "lesson",
         title: `Đã học Bài ${last?.order}: ${last?.title}`,
-        to: `/lessons/${last?.id}`,
+        to: sessionPath("lesson"),
+        session: { kind: "lesson", lessonId: last?.id ?? next.id },
         done: true,
       });
       if (dueCount < EXTRA_LESSON_LIMIT) {
@@ -176,7 +210,8 @@ export function buildDailyPlan(input: PlanInput): DailyPlan {
           id: "lesson-extra",
           title: `Học thêm Bài ${next.order}: ${next.title}`,
           detail: `${next.wordCount} từ · tuỳ chọn, chỉ khi bạn còn sức`,
-          to: `/lessons/${next.id}`,
+          to: sessionPath("lesson-extra"),
+          session: { kind: "lesson", lessonId: next.id },
           done: null,
         });
       }
@@ -185,7 +220,8 @@ export function buildDailyPlan(input: PlanInput): DailyPlan {
         id: "lesson",
         title: `Tạm dừng bài mới (Bài ${next.order})`,
         detail: `Còn ${dueCount} thẻ cần ôn. Ôn bớt xuống dưới ${BACKLOG_LIMIT} rồi học tiếp`,
-        to: "/review",
+        to: sessionPath("lesson"),
+        session: { kind: "review" },
         done: false,
         tone: "blocked",
       });
@@ -193,8 +229,9 @@ export function buildDailyPlan(input: PlanInput): DailyPlan {
       tasks.push({
         id: "lesson",
         title: `Học Bài ${next.order}: ${next.title}`,
-        detail: `${next.wordCount} từ mới · xem thẻ → quiz → vào lịch ôn`,
-        to: `/lessons/${next.id}`,
+        detail: `${next.wordCount} từ mới · ngữ pháp → học từ → quiz`,
+        to: sessionPath("lesson"),
+        session: { kind: "lesson", lessonId: next.id },
         done: false,
       });
     }
@@ -206,7 +243,8 @@ export function buildDailyPlan(input: PlanInput): DailyPlan {
         id: "reread",
         title: `Đọc lại Bài ${l.order}: ${l.title}`,
         detail: "Đọc to câu ví dụ, tự đặt câu theo mẫu ngữ pháp",
-        to: `/lessons/${l.id}`,
+        to: sessionPath("reread"),
+        session: { kind: "reread", lessonId: l.id },
         done: null,
       });
     }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { getWord } from "../data";
 import { previewCard, reviewCard } from "../db/actions";
@@ -21,6 +21,11 @@ const GRADES: { g: Grade; label: string; cls: string }[] = [
 ];
 
 export default function Review() {
+  return <ReviewSession />;
+}
+
+/** Phiên ôn tập. `doneActions` thay cho các nút ở màn hình kết thúc (dùng trong chế độ tập trung). */
+export function ReviewSession({ doneActions }: { doneActions?: ReactNode }) {
   const [queue, setQueue] = useState<CardRow[] | null>(null);
   const [doneCount, setDoneCount] = useState(0);
 
@@ -49,15 +54,19 @@ export default function Review() {
       <div className="card space-y-3 py-10 text-center">
         <div className="text-5xl">{doneCount > 0 ? "✅" : "☕"}</div>
         <div className="text-xl font-semibold">{doneCount > 0 ? `Xong! Bạn đã ôn ${doneCount} lượt.` : "Không có thẻ nào đến hạn."}</div>
-        <p className="text-stone-500">Quay lại sau, hoặc học thêm bài mới.</p>
-        <div className="flex justify-center gap-2">
-          <Link to="/lessons" className="btn-primary">
-            Học bài mới
-          </Link>
-          <Link to="/" className="btn-ghost">
-            Trang chủ
-          </Link>
-        </div>
+        {doneActions ?? (
+          <>
+            <p className="text-stone-500">Quay lại sau, hoặc học thêm bài mới.</p>
+            <div className="flex justify-center gap-2">
+              <Link to="/lessons" className="btn-primary">
+                Học bài mới
+              </Link>
+              <Link to="/" className="btn-ghost">
+                Trang chủ
+              </Link>
+            </div>
+          </>
+        )}
       </div>
     );
   }

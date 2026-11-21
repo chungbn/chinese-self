@@ -108,7 +108,13 @@ export function buildRoadmap(input: RoadmapInput): Roadmap {
   const lessonsStarted = doneLessons > 0 || input.pinyinDone || day >= LESSON_START_DAY;
 
   const pinyinItems: RoadmapItem[] = [
-    ...PINYIN_TOPICS.map((t) => ({ label: t.label, done: input.pinyinTopicsSeen.includes(t.tab), to: `/pinyin?tab=${t.tab}` })),
+    ...PINYIN_TOPICS.map((t) => ({
+      label: t.label,
+      done:
+        input.pinyinTopicsSeen.includes(t.tab) ||
+        (t.tab === "sounds" && ["initials", "finals-1", "finals-2"].every((k) => input.pinyinTopicsSeen.includes(k))),
+      to: `/pinyin?tab=${t.tab}`,
+    })),
     {
       label: `Luyện nghe ${DRILL_TARGET} câu (${Math.min(input.drillTotal, DRILL_TARGET)}/${DRILL_TARGET})`,
       done: input.drillTotal >= DRILL_TARGET,

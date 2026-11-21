@@ -29,27 +29,39 @@ describe("buildDailyPlan", () => {
     const p = buildDailyPlan(input());
     expect(p.phase).toBe("pinyin");
     expect(ids(p)).toEqual(["pinyin-topic", "pinyin-drill"]);
-    expect(p.tasks[0].to).toBe("/pinyin?tab=tones");
+    expect(p.tasks[0].to).toBe("/session/pinyin-topic");
+    expect(p.tasks[0].session).toEqual({ kind: "pinyin-topic", topic: "tones" });
     expect(p.note).toMatch(/Bài 1/);
   });
 
   it("từ ngày thứ 3: thêm Bài 1 song song với pinyin", () => {
     const p = buildDailyPlan(input({ startedAt: daysAgo(2) }));
     expect(ids(p)).toEqual(["pinyin-topic", "pinyin-drill", "lesson"]);
-    expect(p.tasks[0].to).toBe("/pinyin?tab=sounds");
-    expect(p.tasks[2].to).toBe("/lessons/l1");
+    expect(p.tasks[0].session).toEqual({ kind: "pinyin-topic", topic: "initials" });
+    expect(p.tasks[2].session).toEqual({ kind: "lesson", lessonId: "l1" });
   });
 
   it("luyện nghe chỉ gồm nội dung đã học", () => {
-    const drill = (over: Partial<PlanInput>) => buildDailyPlan(input(over)).tasks.find((t) => t.id === "pinyin-drill")!;
+    const mode = (over: Partial<PlanInput>) => {
+      const s = buildDailyPlan(input(over)).tasks.find((t) => t.id === "pinyin-drill")!.session;
+      return s.kind === "drill" ? s.mode : null;
+    };
     // Ngày 1: mới học thanh điệu -> chỉ luyện 4 thanh
-    expect(drill({}).to).toBe("/pinyin?tab=drill&mode=tones");
+    expect(mode({})).toBe("tones");
     // Ngày 3–5: học thanh mẫu/vận mẫu -> vẫn chỉ luyện thanh
-    expect(drill({ startedAt: daysAgo(3), pinyinTopicsSeen: ["tones", "sounds"] }).to).toBe("/pinyin?tab=drill&mode=tones");
+    expect(mode({ startedAt: daysAgo(3), pinyinTopicsSeen: ["tones", "initials", "sounds"] })).toBe("tones");
     // Ngày 6: học lỗi hay gặp -> luyện âm dễ nhầm
-    expect(drill({ startedAt: daysAgo(5) }).to).toBe("/pinyin?tab=drill&mode=pairs");
+    expect(mode({ startedAt: daysAgo(5) })).toBe("pairs");
     // Sau đó -> tổng hợp
-    expect(drill({ startedAt: daysAgo(7), pinyinTopicsSeen: ["tones", "sounds", "pitfalls"] }).to).toBe("/pinyin?tab=drill&mode=mix");
+    expect(mode({ startedAt: daysAgo(7), pinyinTopicsSeen: ["tones", "sounds", "pitfalls"] })).toBe("mix");
+  });
+
+  it("phần thanh mẫu / vận mẫu chia 3 ngày", () => {
+    const topic = (n: number) => {
+      const s = buildDailyPlan(input({ startedAt: daysAgo(n) })).tasks.find((t) => t.id === "pinyin-topic")!.session;
+      return s.kind === "pinyin-topic" ? s.topic : null;
+    };
+    expect([0, 1, 2, 3, 4, 5, 7, 9].map(topic)).toEqual(["tones", "tones", "initials", "finals-1", "finals-2", "pitfalls", "sandhi", "tones"]);
   });
 
   it("drillModeFor", () => {
@@ -71,7 +83,7 @@ describe("buildDailyPlan", () => {
     );
     expect(p.phase).toBe("vocab");
     expect(ids(p)).toEqual(["review", "lesson"]);
-    expect(p.tasks[1].to).toBe("/lessons/l2");
+    expect(p.tasks[1].session).toEqual({ kind: "lesson", lessonId: "l2" });
     expect(p.progress?.label).toBe("1/3 bài");
   });
 
@@ -79,7 +91,7 @@ describe("buildDailyPlan", () => {
     const p = buildDailyPlan(input({ pinyinDone: true, dueCount: BACKLOG_LIMIT + 1, totalCards: 200, completed: [{ id: "l1", completedAt: daysAgo(3) }] }));
     const lesson = p.tasks.find((t) => t.id === "lesson");
     expect(lesson?.tone).toBe("blocked");
-    expect(lesson?.to).toBe("/review");
+    expect(lesson?.session).toEqual({ kind: "review" });
   });
 
   it("đã học 1 bài hôm nay: đánh dấu xong, chỉ gợi ý thêm khi ít thẻ", () => {
@@ -103,9 +115,15 @@ describe("buildDailyPlan", () => {
     expect(ids(p)).toEqual(["review", "reread"]);
   });
 
-  it("chưa tích pinyin nhưng đã học bài: vẫn ở giai đoạn từ vựng và tiếp tục luyện nghe", () => {
-    const p = buildDailyPlan(input({ startedAt: daysAgo(5), completed: [{ id: "l1", completedAt: daysAgo(1) }], totalCards: 51 }));
+  it("đã học bài trong 2 tuần đầu: vẫn tiếp tục chủ đề pinyin song song", () => {
+    const p = buildDailyPlan(input({ startedAt: daysAgo(3), completed: [{ id: "l1", completedAt: daysAgo(1) }], totalCards: 51 }));
     expect(p.phase).toBe("vocab");
+    expect(ids(p)).toEqual(["review", "pinyin-topic", "pinyin-drill", "lesson"]);
+    expect(p.tasks[1].session).toEqual({ kind: "pinyin-topic", topic: "finals-1" });
+  });
+
+  it("sau 2 tuần chưa tích pinyin: chỉ còn luyện nghe", () => {
+    const p = buildDailyPlan(input({ startedAt: daysAgo(15), completed: [{ id: "l1", completedAt: daysAgo(1) }], totalCards: 51 }));
     expect(ids(p)).toEqual(["review", "pinyin-drill", "lesson"]);
   });
 });

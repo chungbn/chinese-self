@@ -20,7 +20,8 @@ export function useDailyPlan(now: Date): DailyPlan | null {
     const startOfDay = new Date(now);
     startOfDay.setHours(0, 0, 0, 0);
     const [dueCount, totalCards, reviewedToday, completed, pinyinDone, drill, tabs, allTabs] = await Promise.all([
-      db.cards.where("dueAt").belowOrEqual(now).count(),
+      // Dùng thời điểm thực lúc truy vấn: thẻ vừa tạo (đến hạn ngay) phải được tính luôn
+      db.cards.where("dueAt").belowOrEqual(new Date()).count(),
       db.cards.count(),
       db.reviews.where("at").aboveOrEqual(startOfDay).count(),
       db.lessons.toArray(),
