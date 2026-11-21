@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { CONFUSABLE_PAIRS, FINALS, INITIALS, SANDHI_RULES, TONE_SETS, TONES, VIETNAMESE_PITFALLS, type SoundItem } from "../data/pinyin";
 import { db } from "../db/db";
+import { DRILL_MODE_LABEL, drillModeFor, type DrillMode } from "../lib/plan";
 import { incrementDrill, recordPinyinTab } from "../db/actions";
 import { toneOf } from "../lib/pinyin";
 import { shuffle } from "../lib/shuffle";
@@ -23,6 +24,14 @@ export default function PinyinPage() {
   const [params, setParams] = useSearchParams();
   const tab: TabId = TABS.some((t) => t.id === params.get("tab")) ? (params.get("tab") as TabId) : "tones";
   const setTab = (t: TabId) => setParams({ tab: t }, { replace: true });
+  const topicsSeen =
+    useLiveQuery(async () => [
+      ...new Set((await db.meta.where("key").startsWith("pinyinTabs:").toArray()).flatMap((r) => (r.value as string[]) ?? [])),
+    ]) ?? [];
+  const modeParam = params.get("mode");
+  const drillMode: DrillMode =
+    modeParam === "tones" || modeParam === "pairs" || modeParam === "mix" ? modeParam : drillModeFor(null, topicsSeen);
+  const setDrillMode = (m: DrillMode) => setParams({ tab: "drill", mode: m }, { replace: true });
   useEffect(() => {
     recordPinyinTab(tab);
   }, [tab]);
@@ -53,7 +62,7 @@ export default function PinyinPage() {
       {tab === "sounds" && <Sounds />}
       {tab === "sandhi" && <Sandhi />}
       {tab === "pitfalls" && <Pitfalls />}
-      {tab === "drill" && <Drill />}
+      {tab === "drill" && <Drill key={drillMode} mode={drillMode} onModeChange={setDrillMode} />}
 
       <label className="card flex items-center gap-3">
         <input
@@ -210,8 +219,9 @@ type DrillQ =
   | { kind: "tone"; char: string; py: string; answer: number }
   | { kind: "pair"; target: SoundItem; options: SoundItem[]; hint: string };
 
-function makeQuestion(): DrillQ {
-  if (Math.random() < 0.6) {
+function makeQuestion(mode: DrillMode): DrillQ {
+  const tone = mode === "tones" || (mode === "mix" && Math.random() < 0.6);
+  if (tone) {
     const s = TONE_SETS[Math.floor(Math.random() * TONE_SETS.length)];
     const t = Math.floor(Math.random() * 4);
     return { kind: "tone", char: s.chars[t], py: s.py[t], answer: t + 1 };
@@ -221,8 +231,14 @@ function makeQuestion(): DrillQ {
   return { kind: "pair", target: options[Math.floor(Math.random() * 2)], options, hint: p.hint };
 }
 
-function Drill() {
-  const [q, setQ] = useState<DrillQ>(() => makeQuestion());
+const DRILL_MODE_HINT: Record<DrillMode, string> = {
+  tones: "Nghe một chữ, chọn thanh 1–4. Phù hợp khi mới học xong phần 4 thanh.",
+  pairs: "Nghe và chọn đúng âm trong các cặp dễ nhầm. Nên học phần «Lỗi hay gặp» trước.",
+  mix: "Trộn cả thanh điệu và âm dễ nhầm.",
+};
+
+function Drill({ mode, onModeChange }: { mode: DrillMode; onModeChange: (m: DrillMode) => void }) {
+  const [q, setQ] = useState<DrillQ>(() => makeQuestion(mode));
   const [picked, setPicked] = useState<string | null>(null);
   const [score, setScore] = useState({ right: 0, total: 0 });
 
@@ -236,7 +252,7 @@ function Drill() {
     setScore((s) => ({ right: s.right + (key === answerKey ? 1 : 0), total: s.total + 1 }));
   };
   const next = () => {
-    const nq = makeQuestion();
+    const nq = makeQuestion(mode);
     setQ(nq);
     setPicked(null);
     play(nq);
@@ -244,6 +260,20 @@ function Drill() {
 
   return (
     <div className="card space-y-4 text-center">
+      <div className="flex justify-center gap-1" role="radiogroup" aria-label="Chế độ luyện nghe">
+        {(Object.keys(DRILL_MODE_LABEL) as DrillMode[]).map((m) => (
+          <button
+            key={m}
+            role="radio"
+            aria-checked={m === mode}
+            onClick={() => onModeChange(m)}
+            className={`rounded-full px-3 py-1 text-sm ${m === mode ? "bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-900" : "bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300"}`}
+          >
+            {DRILL_MODE_LABEL[m]}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-stone-500">{DRILL_MODE_HINT[mode]}</p>
       <div className="text-sm text-stone-500">
         Đúng {score.right}/{score.total}
       </div>

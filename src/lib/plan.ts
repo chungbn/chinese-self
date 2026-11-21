@@ -7,6 +7,24 @@
 
 export type PinyinTab = "tones" | "sounds" | "sandhi" | "pitfalls" | "drill";
 
+/** Nội dung bài luyện nghe: chỉ thanh điệu, chỉ âm dễ nhầm, hoặc trộn cả hai. */
+export type DrillMode = "tones" | "pairs" | "mix";
+
+export const DRILL_MODE_LABEL: Record<DrillMode, string> = {
+  tones: "4 thanh",
+  pairs: "Âm dễ nhầm",
+  mix: "Tổng hợp",
+};
+
+/**
+ * Chọn chế độ luyện nghe theo những gì đã học: chưa học phần «Lỗi hay gặp» thì chỉ luyện thanh;
+ * ngày học phần đó thì luyện âm dễ nhầm; sau đó luyện tổng hợp.
+ */
+export function drillModeFor(topicToday: PinyinTab | null, topicsSeen: readonly string[]): DrillMode {
+  if (topicToday === "pitfalls") return "pairs";
+  return topicsSeen.includes("pitfalls") ? "mix" : "tones";
+}
+
 export type PlanTask = {
   id: string;
   title: string;
@@ -36,6 +54,8 @@ export type PlanInput = {
   drillToday: number;
   /** Các tab pinyin đã mở hôm nay */
   pinyinTabsToday: PinyinTab[];
+  /** Các tab pinyin từng mở (mọi ngày) */
+  pinyinTopicsSeen: string[];
   dueCount: number;
   /** Tổng số thẻ đã có trong lịch ôn */
   totalCards: number;
@@ -114,8 +134,9 @@ export function buildDailyPlan(input: PlanInput): DailyPlan {
 
   // 2. Pinyin: chủ đề trong giai đoạn phát âm + luyện nghe hằng ngày cho tới khi nắm vững
   if (!pinyinDone) {
-    if (phase === "pinyin") {
-      const topic = pinyinTopicForDay(day);
+    const topic = phase === "pinyin" ? pinyinTopicForDay(day) : null;
+    const mode = drillModeFor(topic?.tab ?? null, input.pinyinTopicsSeen);
+    if (topic) {
       tasks.push({
         id: "pinyin-topic",
         title: topic.title,
@@ -126,9 +147,14 @@ export function buildDailyPlan(input: PlanInput): DailyPlan {
     }
     tasks.push({
       id: "pinyin-drill",
-      title: `Luyện nghe thanh điệu (${Math.min(input.drillToday, DRILL_GOAL)}/${DRILL_GOAL} câu)`,
-      detail: "Nghe và chọn thanh / chọn âm đúng",
-      to: "/pinyin?tab=drill",
+      title: `Luyện nghe: ${DRILL_MODE_LABEL[mode].toLowerCase()} (${Math.min(input.drillToday, DRILL_GOAL)}/${DRILL_GOAL} câu)`,
+      detail:
+        mode === "tones"
+          ? "Nghe một chữ và chọn đúng thanh 1–4"
+          : mode === "pairs"
+            ? "Nghe và chọn đúng âm trong các cặp zh/z, b/p, an/ang…"
+            : "Trộn câu hỏi thanh điệu và âm dễ nhầm",
+      to: `/pinyin?tab=drill&mode=${mode}`,
       done: input.drillToday >= DRILL_GOAL,
     });
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BACKLOG_LIMIT, buildDailyPlan, type PlanInput } from "./plan";
+import { BACKLOG_LIMIT, buildDailyPlan, drillModeFor, type PlanInput } from "./plan";
 
 const lessons = Array.from({ length: 3 }, (_, i) => ({ id: `l${i + 1}`, order: i + 1, title: `Bài ${i + 1}`, wordCount: 15 }));
 const now = new Date(2026, 10, 21, 9, 0);
@@ -12,6 +12,7 @@ function input(over: Partial<PlanInput> = {}): PlanInput {
     pinyinDone: false,
     drillToday: 0,
     pinyinTabsToday: [],
+    pinyinTopicsSeen: [],
     dueCount: 0,
     totalCards: 0,
     reviewedToday: 0,
@@ -37,6 +38,25 @@ describe("buildDailyPlan", () => {
     expect(ids(p)).toEqual(["pinyin-topic", "pinyin-drill", "lesson"]);
     expect(p.tasks[0].to).toBe("/pinyin?tab=sounds");
     expect(p.tasks[2].to).toBe("/lessons/l1");
+  });
+
+  it("luyện nghe chỉ gồm nội dung đã học", () => {
+    const drill = (over: Partial<PlanInput>) => buildDailyPlan(input(over)).tasks.find((t) => t.id === "pinyin-drill")!;
+    // Ngày 1: mới học thanh điệu -> chỉ luyện 4 thanh
+    expect(drill({}).to).toBe("/pinyin?tab=drill&mode=tones");
+    // Ngày 3–5: học thanh mẫu/vận mẫu -> vẫn chỉ luyện thanh
+    expect(drill({ startedAt: daysAgo(3), pinyinTopicsSeen: ["tones", "sounds"] }).to).toBe("/pinyin?tab=drill&mode=tones");
+    // Ngày 6: học lỗi hay gặp -> luyện âm dễ nhầm
+    expect(drill({ startedAt: daysAgo(5) }).to).toBe("/pinyin?tab=drill&mode=pairs");
+    // Sau đó -> tổng hợp
+    expect(drill({ startedAt: daysAgo(7), pinyinTopicsSeen: ["tones", "sounds", "pitfalls"] }).to).toBe("/pinyin?tab=drill&mode=mix");
+  });
+
+  it("drillModeFor", () => {
+    expect(drillModeFor("tones", [])).toBe("tones");
+    expect(drillModeFor("pitfalls", [])).toBe("pairs");
+    expect(drillModeFor(null, ["pitfalls"])).toBe("mix");
+    expect(drillModeFor(null, ["tones"])).toBe("tones");
   });
 
   it("đánh dấu xong luyện nghe khi đủ 20 câu và chủ đề khi đã mở tab", () => {

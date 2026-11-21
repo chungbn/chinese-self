@@ -19,7 +19,7 @@ export function useDailyPlan(now: Date): DailyPlan | null {
   const data = useLiveQuery(async () => {
     const startOfDay = new Date(now);
     startOfDay.setHours(0, 0, 0, 0);
-    const [dueCount, totalCards, reviewedToday, completed, pinyinDone, drill, tabs] = await Promise.all([
+    const [dueCount, totalCards, reviewedToday, completed, pinyinDone, drill, tabs, allTabs] = await Promise.all([
       db.cards.where("dueAt").belowOrEqual(now).count(),
       db.cards.count(),
       db.reviews.where("at").aboveOrEqual(startOfDay).count(),
@@ -27,6 +27,7 @@ export function useDailyPlan(now: Date): DailyPlan | null {
       db.meta.get("pinyinDone"),
       db.meta.get(`drill:${today}`),
       db.meta.get(`pinyinTabs:${today}`),
+      db.meta.where("key").startsWith("pinyinTabs:").toArray(),
     ]);
     return {
       dueCount,
@@ -36,6 +37,7 @@ export function useDailyPlan(now: Date): DailyPlan | null {
       pinyinDone: pinyinDone?.value === true,
       drillToday: (drill?.value as number | undefined) ?? 0,
       pinyinTabsToday: (tabs?.value as PinyinTab[] | undefined) ?? [],
+      pinyinTopicsSeen: [...new Set(allTabs.flatMap((r) => (r.value as string[]) ?? []))],
     };
   }, [now.getTime(), today]);
 
