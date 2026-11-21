@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+@theme {
+  --font-han: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", "Source Han Sans SC", sans-serif;
+  --color-brand-50: #fef2f2;
+  --color-brand-100: #fee2e2;
+  --color-brand-500: #ef4444;
+  --color-brand-600: #dc2626;
+  --color-brand-700: #b91c1c;
+  --color-brand-800: #991b1b;
+}
+
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  @apply bg-stone-50 text-stone-900 dark:bg-stone-950 dark:text-stone-100 antialiased;
+}
+
+.han {
+  font-family: var(--font-han);
+}
+
+@utility card {
+  @apply rounded-2xl border border-stone-200 bg-white p-4 shadow-sm dark:border-stone-800 dark:bg-stone-900;
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 font-medium transition active:scale-[0.98] disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 font-medium transition active:scale-[0.98] disabled:opacity-50 bg-brand-700 text-white hover:bg-brand-800;
+}
+@utility btn-ghost {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 font-medium transition active:scale-[0.98] disabled:opacity-50 border border-stone-300 bg-white hover:bg-stone-100 dark:border-stone-700 dark:bg-stone-900 dark:hover:bg-stone-800;
+}
+
+.tone-1 { @apply text-red-600 dark:text-red-400; }
+.tone-2 { @apply text-amber-600 dark:text-amber-400; }
+.tone-3 { @apply text-green-600 dark:text-green-400; }
+.tone-4 { @apply text-blue-600 dark:text-blue-400; }
+.tone-0 { @apply text-stone-500 dark:text-stone-400; }
