@@ -114,3 +114,31 @@ export function computeStreak(reviewDays: Set<string>, today = new Date()): numb
   }
   return streak;
 }
+
+// ---------- Theo dõi việc học pinyin trong ngày (cho kế hoạch hằng ngày) ----------
+
+export async function incrementDrill(now = new Date()): Promise<void> {
+  const key = `drill:${dayKey(now)}`;
+  await db.transaction("rw", db.meta, async () => {
+    const cur = ((await db.meta.get(key))?.value as number | undefined) ?? 0;
+    await db.meta.put({ key, value: cur + 1 });
+  });
+}
+
+export async function recordPinyinTab(tab: string, now = new Date()): Promise<void> {
+  const key = `pinyinTabs:${dayKey(now)}`;
+  await db.transaction("rw", db.meta, async () => {
+    const cur = ((await db.meta.get(key))?.value as string[] | undefined) ?? [];
+    if (!cur.includes(tab)) await db.meta.put({ key, value: [...cur, tab] });
+  });
+}
+
+/** Ngày bắt đầu học: lưu lần đầu mở app (hoặc lấy ngày hoàn thành bài sớm nhất nếu có). */
+export async function ensureStartedAt(now = new Date()): Promise<Date> {
+  const row = await db.meta.get("startedAt");
+  if (row) return new Date(row.value as string);
+  const lessons = await db.lessons.toArray();
+  const earliest = lessons.reduce((min, l) => (l.completedAt < min ? l.completedAt : min), now);
+  await db.meta.put({ key: "startedAt", value: earliest.toISOString() });
+  return earliest;
+}

@@ -1,7 +1,9 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 import { CONFUSABLE_PAIRS, FINALS, INITIALS, SANDHI_RULES, TONE_SETS, TONES, VIETNAMESE_PITFALLS, type SoundItem } from "../data/pinyin";
 import { db } from "../db/db";
+import { incrementDrill, recordPinyinTab } from "../db/actions";
 import { toneOf } from "../lib/pinyin";
 import { shuffle } from "../lib/shuffle";
 import { speak } from "../lib/tts";
@@ -18,7 +20,12 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 export default function PinyinPage() {
-  const [tab, setTab] = useState<TabId>("tones");
+  const [params, setParams] = useSearchParams();
+  const tab: TabId = TABS.some((t) => t.id === params.get("tab")) ? (params.get("tab") as TabId) : "tones";
+  const setTab = (t: TabId) => setParams({ tab: t }, { replace: true });
+  useEffect(() => {
+    recordPinyinTab(tab);
+  }, [tab]);
   const done = (useLiveQuery(() => db.meta.get("pinyinDone")) ?? null)?.value === true;
   const voice = useChineseVoice();
 
@@ -225,6 +232,7 @@ function Drill() {
   const choose = (key: string) => {
     if (picked) return;
     setPicked(key);
+    incrementDrill();
     setScore((s) => ({ right: s.right + (key === answerKey ? 1 : 0), total: s.total + 1 }));
   };
   const next = () => {

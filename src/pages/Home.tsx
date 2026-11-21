@@ -1,16 +1,37 @@
 import { useLiveQuery } from "dexie-react-hooks";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { LESSONS } from "../data";
-import { computeStreak, dayKey } from "../db/actions";
+import { computeStreak, dayKey, ensureStartedAt } from "../db/actions";
 import { db } from "../db/db";
 import { useNow } from "../hooks/useNow";
+import { buildDailyPlan, type DailyPlan, type PinyinTab, type PlanTask } from "../lib/plan";
 import { PageTitle, Stat } from "../components/ui";
 
 export default function Home() {
   const now = useNow();
-  const dueCount = useLiveQuery(() => db.cards.where("dueAt").belowOrEqual(now).count(), [now.getTime()]) ?? 0;
+  const today = dayKey(now);
+  const [startedAt, setStartedAt] = useState<Date | null>(null);
+  useEffect(() => {
+    ensureStartedAt().then(setStartedAt);
+  }, []);
+
+  const dueCount = useLiveQuery(() => db.cards.where("dueAt").belowOrEqual(now).count(), [now.getTime()]);
+  const totalCards = useLiveQuery(() => db.cards.count()) ?? 0;
   const learnedWords = useLiveQuery(async () => new Set(await db.cards.orderBy("wordId").uniqueKeys()).size) ?? 0;
-  const completed = useLiveQuery(() => db.lessons.toArray()) ?? [];
+  const completed = useLiveQuery(() => db.lessons.toArray());
+  const meta = useLiveQuery(async () => {
+    const [pinyinDone, drill, tabs] = await Promise.all([
+      db.meta.get("pinyinDone"),
+      db.meta.get(`drill:${today}`),
+      db.meta.get(`pinyinTabs:${today}`),
+    ]);
+    return {
+      pinyinDone: pinyinDone?.value === true,
+      drillToday: (drill?.value as number | undefined) ?? 0,
+      pinyinTabsToday: (tabs?.value as PinyinTab[] | undefined) ?? [],
+    };
+  }, [today]);
   const reviewDays = useLiveQuery(async () => {
     const since = new Date(now);
     since.setDate(since.getDate() - 400);
@@ -32,12 +53,22 @@ export default function Home() {
     return out;
   }, [now.getTime()]);
 
-  const doneIds = new Set(completed.map((l) => l.id));
-  const nextLesson = LESSONS.find((l) => !doneIds.has(l.id));
-  const todayReviews = reviewDays?.get(dayKey(now)) ?? 0;
+  const todayReviews = reviewDays?.get(today) ?? 0;
   const streak = reviewDays ? computeStreak(new Set(reviewDays.keys()), now) : 0;
 
-  const pinyinDone = (useLiveQuery(() => db.meta.get("pinyinDone")) ?? null)?.value === true;
+  const plan =
+    startedAt && meta && completed && dueCount !== undefined
+      ? buildDailyPlan({
+          now,
+          startedAt,
+          ...meta,
+          dueCount,
+          totalCards,
+          reviewedToday: todayReviews,
+          lessons: LESSONS.map((l) => ({ id: l.id, order: l.order, title: l.title, wordCount: l.wordIds.length })),
+          completed,
+        })
+      : null;
 
   return (
     <div className="space-y-4">
@@ -45,34 +76,7 @@ export default function Home() {
         Hôm nay học gì?
       </PageTitle>
 
-      {!pinyinDone && learnedWords === 0 && (
-        <Link to="/pinyin" className="card block border-amber-300 bg-amber-50 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950">
-          <div className="font-semibold">Bước 1: Pinyin & thanh điệu</div>
-          <div className="text-sm text-stone-600 dark:text-stone-400">
-            Mới bắt đầu? Học phát âm và 4 thanh trước khi học từ vựng (khoảng 2–4 tuần, có thể song song).
-          </div>
-        </Link>
-      )}
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Link to="/review" className="card flex flex-col gap-1 hover:border-brand-500">
-          <span className="text-sm text-stone-500">Thẻ cần ôn</span>
-          <span className="text-4xl font-bold text-brand-700 dark:text-brand-500">{dueCount}</span>
-          <span className="btn-primary mt-2 self-start">{dueCount > 0 ? "Ôn tập ngay" : "Không có thẻ đến hạn"}</span>
-        </Link>
-        {nextLesson ? (
-          <Link to={`/lessons/${nextLesson.id}`} className="card flex flex-col gap-1 hover:border-brand-500">
-            <span className="text-sm text-stone-500">Bài tiếp theo · HSK {nextLesson.level}</span>
-            <span className="text-xl font-semibold">
-              Bài {nextLesson.order}: {nextLesson.title}
-            </span>
-            <span className="text-sm text-stone-500">{nextLesson.wordIds.length} từ mới</span>
-            <span className="btn-ghost mt-2 self-start">Học bài mới</span>
-          </Link>
-        ) : (
-          <div className="card">Bạn đã học hết các bài hiện có 🎉</div>
-        )}
-      </div>
+      {plan ? <PlanCard plan={plan} /> : <div className="card h-40 animate-pulse" />}
 
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Từ đã học" value={learnedWords} />
@@ -102,6 +106,85 @@ export default function Home() {
 
       {reviewDays && <Heatmap byDay={reviewDays} now={now} />}
     </div>
+  );
+}
+
+function PlanCard({ plan }: { plan: DailyPlan }) {
+  const required = plan.tasks.filter((t) => t.done !== null);
+  const doneCount = required.filter((t) => t.done).length;
+  const allDone = required.length > 0 && doneCount === required.length;
+  const firstTodo = plan.tasks.find((t) => t.done === false);
+  return (
+    <section className="card space-y-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <div className="text-xs font-medium tracking-wide text-brand-700 uppercase dark:text-brand-500">{plan.phaseLabel}</div>
+          <h2 className="text-lg font-semibold">Kế hoạch hôm nay</h2>
+        </div>
+        <span className="text-sm text-stone-500">
+          {doneCount}/{required.length} việc
+        </span>
+      </div>
+      {plan.progress && (
+        <div>
+          <div className="mb-1 flex justify-between text-xs text-stone-500">
+            <span>Tiến độ HSK 1</span>
+            <span>{plan.progress.label}</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800">
+            <div className="h-full bg-brand-600" style={{ width: `${(plan.progress.done / plan.progress.total) * 100}%` }} />
+          </div>
+        </div>
+      )}
+      <ol className="space-y-2">
+        {plan.tasks.map((t, i) => (
+          <TaskRow key={t.id} task={t} index={i + 1} highlight={t === firstTodo} />
+        ))}
+      </ol>
+      {allDone && (
+        <p className="rounded-xl bg-green-100 p-3 text-sm text-green-800 dark:bg-green-950 dark:text-green-300">
+          Xong kế hoạch hôm nay 🎉 Mai quay lại để giữ chuỗi ngày học nhé.
+        </p>
+      )}
+      {plan.note && <p className="text-sm text-stone-500">{plan.note}</p>}
+    </section>
+  );
+}
+
+function TaskRow({ task, index, highlight }: { task: PlanTask; index: number; highlight: boolean }) {
+  const icon =
+    task.done === true ? (
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-green-600 text-sm text-white">✓</span>
+    ) : task.tone === "blocked" ? (
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500 text-sm text-white">!</span>
+    ) : (
+      <span
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold ${
+          task.done === null ? "border-dashed border-stone-300 text-stone-400 dark:border-stone-700" : "border-brand-600 text-brand-700 dark:text-brand-500"
+        }`}
+      >
+        {index}
+      </span>
+    );
+  return (
+    <li>
+      <Link
+        to={task.to}
+        className={`flex items-center gap-3 rounded-xl border p-3 transition ${
+          highlight
+            ? "border-brand-600 bg-brand-50 hover:bg-brand-100 dark:bg-brand-800/20 dark:hover:bg-brand-800/30"
+            : "border-stone-200 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-stone-800/50"
+        }`}
+      >
+        {icon}
+        <span className="min-w-0 flex-1">
+          <span className={`block font-medium ${task.done === true ? "text-stone-500 line-through decoration-stone-300" : ""}`}>{task.title}</span>
+          {task.detail && task.done !== true && <span className="block text-sm text-stone-500">{task.detail}</span>}
+        </span>
+        {highlight && <span className="btn-primary shrink-0 px-3 py-1 text-sm">Bắt đầu</span>}
+        {!highlight && task.done !== true && <span className="text-stone-400">›</span>}
+      </Link>
+    </li>
   );
 }
 
