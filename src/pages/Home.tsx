@@ -3,6 +3,8 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { db } from "../db/db";
 import { useDailyPlan } from "../hooks/useDailyPlan";
+import { useRoadmap } from "../hooks/useRoadmap";
+import { RoadmapStrip } from "../components/RoadmapStrip";
 import { useNow } from "../hooks/useNow";
 import { planStatus, type DailyPlan, type PlanTask } from "../lib/plan";
 import { computeStreak, dayKey } from "../lib/streak";
@@ -13,6 +15,7 @@ export default function Home() {
   const now = useNow();
   const today = dayKey(now);
   const plan = useDailyPlan(now);
+  const roadmap = useRoadmap(now);
   const [showCalendar, setShowCalendar] = useState(false);
 
   const learnedWords = useLiveQuery(async () => new Set(await db.cards.orderBy("wordId").uniqueKeys()).size) ?? 0;
@@ -47,6 +50,8 @@ export default function Home() {
       <PageTitle sub={now.toLocaleDateString("vi-VN", { weekday: "long", day: "numeric", month: "long" })}>
         Hôm nay học gì?
       </PageTitle>
+
+      {roadmap && <RoadmapStrip roadmap={roadmap} />}
 
       {plan ? <PlanCard plan={plan} completedToday={todayDone} /> : <div className="card h-40 animate-pulse" />}
 

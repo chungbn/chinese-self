@@ -1,5 +1,6 @@
 import { HashRouter, NavLink, Route, Routes } from "react-router";
 import Home from "./pages/Home";
+import RoadmapPage from "./pages/RoadmapPage";
 import PinyinPage from "./pages/PinyinPage";
 import Lessons from "./pages/Lessons";
 import LessonDetail from "./pages/LessonDetail";
@@ -11,6 +12,7 @@ import { PlanTracker } from "./components/PlanTracker";
 
 const NAV = [
   { to: "/", label: "Hôm nay", icon: "☀" },
+  { to: "/roadmap", label: "Lộ trình", icon: "路" },
   { to: "/pinyin", label: "Pinyin", icon: "ā" },
   { to: "/lessons", label: "Bài học", icon: "课" },
   { to: "/review", label: "Ôn tập", icon: "↻" },
@@ -48,6 +50,7 @@ export default function App() {
       <main className="mx-auto max-w-3xl px-4 pt-4 pb-24 sm:pb-10">
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/roadmap" element={<RoadmapPage />} />
           <Route path="/pinyin" element={<PinyinPage />} />
           <Route path="/lessons" element={<Lessons />} />
           <Route path="/lessons/:id" element={<LessonDetail />} />

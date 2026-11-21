@@ -15,6 +15,10 @@ await page.goto(BASE);
 await page.getByText("Hôm nay học gì?").waitFor();
 await page.screenshot({ path: `${OUT}/01-home.png`, fullPage: true });
 
+await page.goto(BASE + "#/roadmap");
+await page.getByText("Bạn đang ở", { exact: true }).waitFor();
+await page.screenshot({ path: `${OUT}/01b-roadmap.png`, fullPage: true });
+
 await page.goto(BASE + "#/pinyin");
 await page.getByText("Nghe 4 thanh của cùng một âm").waitFor();
 await page.screenshot({ path: `${OUT}/02-pinyin.png`, fullPage: true });
@@ -63,6 +67,11 @@ await page.getByText("Hôm nay học gì?").waitFor();
 await page.waitForTimeout(300);
 await page.screenshot({ path: `${OUT}/08-home-after.png`, fullPage: true });
 
+await page.goto(BASE + "#/roadmap");
+await page.getByText("Bạn đang ở", { exact: true }).waitFor();
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${OUT}/08b-roadmap-after.png`, fullPage: true });
+await page.goto(BASE);
 await page.getByRole("button", { name: "Xem lịch hoàn thành" }).click();
 await page.getByText("Chuỗi ngày hoàn thành").waitFor();
 await page.screenshot({ path: `${OUT}/10-calendar.png` });
