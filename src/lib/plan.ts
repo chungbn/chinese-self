@@ -40,7 +40,7 @@ export const TOPIC_TAB: Record<PinyinTopic, PinyinTab> = {
 
 /** Nội dung hiển thị trong chế độ tập trung khi bấm vào một việc. */
 export type TaskSession =
-  | { kind: "pinyin-topic"; topic: PinyinTopic }
+  | { kind: "pinyin-topic"; topic: PinyinTopic; step: number }
   | { kind: "drill"; mode: DrillMode }
   | { kind: "review" }
   | { kind: "lesson"; lessonId: string }
@@ -67,6 +67,8 @@ export type DailyPlan = {
   progress?: { done: number; total: number; label: string };
   tasks: PlanTask[];
   note?: string;
+  /** Báo khi đang học nhanh hơn nhịp mặc định */
+  pace?: string;
 };
 
 export type PlanInput = {
@@ -75,8 +77,8 @@ export type PlanInput = {
   pinyinDone: boolean;
   /** Số câu luyện nghe pinyin đã làm hôm nay */
   drillToday: number;
-  /** Các phần pinyin đã học xong hôm nay (PinyinTopic hoặc tên tab) */
-  pinyinTabsToday: string[];
+  /** Các bước pinyin đã học xong: phần tử thứ i là ngày (YYYY-MM-DD) học xong bước i của PINYIN_STEPS */
+  pinyinSteps: string[];
   /** Các phần pinyin từng học xong (mọi ngày) */
   pinyinTopicsSeen: string[];
   dueCount: number;
@@ -108,16 +110,52 @@ export function daysBetween(from: Date, to: Date): number {
   return Math.max(0, Math.round((startOfDay(to) - startOfDay(from)) / DAY_MS));
 }
 
-/** Phần pinyin gợi ý theo ngày học. */
-export function pinyinTopicForDay(day: number): { topic: PinyinTopic; tab: PinyinTab; title: string; detail: string } {
-  const t = (topic: PinyinTopic, title: string, detail: string) => ({ topic, tab: TOPIC_TAB[topic], title, detail });
-  if (day <= 1) return t("tones", "Học 4 thanh điệu", "Nghe từng bộ âm (ma, ba, yi…) và đọc to theo");
-  if (day === 2) return t("initials", "Thanh mẫu (phụ âm đầu)", "23 phụ âm đầu, chú ý cặp bật hơi / không bật hơi");
-  if (day === 3) return t("finals-1", "Vận mẫu — phần 1", "Vần đơn và vần ghép cơ bản: a, o, e, ai, ao, an, ang…");
-  if (day === 4) return t("finals-2", "Vận mẫu — phần 2", "Vần bắt đầu bằng i, u, ü: ia, ian, uo, uan, üe…");
-  if (day <= 6) return t("pitfalls", "Các lỗi người Việt hay mắc", "Tập kỹ các cặp zh/z, ch/c, sh/s, b/p, ü");
-  if (day <= 8) return t("sandhi", "Quy tắc biến điệu", "3+3, thanh 3 nửa, 不 và 一");
-  return t("tones", "Ôn lại 4 thanh", "Nghe lại các bộ âm, chú ý thanh 3 và thanh 4");
+export type PinyinStep = { topic: PinyinTopic; tab: PinyinTab; title: string; detail: string };
+
+const step = (topic: PinyinTopic, title: string, detail: string): PinyinStep => ({ topic, tab: TOPIC_TAB[topic], title, detail });
+
+/**
+ * Các bước học pinyin theo thứ tự, mặc định mỗi ngày một bước.
+ * Tiến độ tính theo số bước đã xong (không theo lịch), nên có thể học trước, và nghỉ vài ngày cũng không bị bỏ sót.
+ */
+export const PINYIN_STEPS: PinyinStep[] = [
+  step("tones", "Học 4 thanh điệu", "Nghe từng bộ âm (ma, ba, yi…) và đọc to theo"),
+  step("tones", "Ôn lại 4 thanh", "Nghe lại các bộ âm, chú ý thanh 3 và thanh 4"),
+  step("initials", "Thanh mẫu (phụ âm đầu)", "23 phụ âm đầu, chú ý cặp bật hơi / không bật hơi"),
+  step("finals-1", "Vận mẫu — phần 1", "Vần đơn và vần ghép cơ bản: a, o, e, ai, ao, an, ang…"),
+  step("finals-2", "Vận mẫu — phần 2", "Vần bắt đầu bằng i, u, ü: ia, ian, uo, uan, üe…"),
+  step("pitfalls", "Các lỗi người Việt hay mắc", "Tập kỹ các cặp zh/z, ch/c, sh/s, b/p, ü"),
+  step("pitfalls", "Ôn lại các lỗi hay gặp", "Nghe lại từng cặp âm dễ nhầm và đọc to"),
+  step("sandhi", "Quy tắc biến điệu", "3+3, thanh 3 nửa, 不 và 一"),
+  step("sandhi", "Ôn lại biến điệu", "Nghe lại ví dụ, tự đọc trước rồi bấm nghe để so"),
+];
+
+/** Số bước pinyin đã xong trước hôm nay và trong hôm nay. */
+export function pinyinStepState(steps: readonly string[], todayKey: string): { before: number; today: number; total: number } {
+  const before = steps.filter((d) => d < todayKey).length;
+  return { before, today: steps.length - before, total: steps.length };
+}
+
+/**
+ * Dựng lại lịch sử bước pinyin từ dữ liệu cũ (các phần đã học theo từng ngày),
+ * dùng khi chưa có bản ghi bước. Mỗi ngày mỗi phần chỉ tính một bước.
+ */
+export function deriveSteps(tabsByDay: readonly { day: string; tabs: readonly string[] }[]): string[] {
+  const steps: string[] = [];
+  for (const { day, tabs } of [...tabsByDay].sort((a, b) => a.day.localeCompare(b.day))) {
+    const used = new Set<string>();
+    while (steps.length < PINYIN_STEPS.length) {
+      const t = PINYIN_STEPS[steps.length].topic;
+      if (used.has(t) || !tabs.includes(t)) break;
+      used.add(t);
+      steps.push(day);
+    }
+  }
+  return steps;
+}
+
+function todayKeyOf(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 const sessionPath = (id: string) => `/session/${id}`;
@@ -162,19 +200,20 @@ export function buildDailyPlan(input: PlanInput): DailyPlan {
     });
   }
 
-  // 2. Pinyin: chủ đề trong giai đoạn phát âm + luyện nghe hằng ngày cho tới khi nắm vững
+  // 2. Pinyin: bước tiếp theo + luyện nghe hằng ngày cho tới khi nắm vững
+  const steps = pinyinStepState(input.pinyinSteps, todayKeyOf(now));
   if (!pinyinDone) {
-    // Trong 2 tuần đầu vẫn học chủ đề pinyin mỗi ngày, kể cả khi đã bắt đầu học bài song song
-    const topic = day < PINYIN_PHASE_DAYS ? pinyinTopicForDay(day) : null;
-    const mode = drillModeFor(topic?.tab ?? null, input.pinyinTopicsSeen);
-    if (topic) {
+    // Bước của hôm nay: bước đầu tiên chưa học tính tới hết hôm qua
+    const current = PINYIN_STEPS[steps.before];
+    const mode = drillModeFor(current?.tab ?? null, input.pinyinTopicsSeen);
+    if (current) {
       tasks.push({
         id: "pinyin-topic",
-        title: topic.title,
-        detail: topic.detail,
+        title: current.title,
+        detail: current.detail,
         to: sessionPath("pinyin-topic"),
-        session: { kind: "pinyin-topic", topic: topic.topic },
-        done: input.pinyinTabsToday.includes(topic.topic),
+        session: { kind: "pinyin-topic", topic: current.topic, step: steps.before },
+        done: steps.today > 0,
       });
     }
     tasks.push({
@@ -190,31 +229,52 @@ export function buildDailyPlan(input: PlanInput): DailyPlan {
       session: { kind: "drill", mode },
       done: input.drillToday >= DRILL_GOAL,
     });
+    // Học trước: xong bước hôm nay thì gợi ý bước kế tiếp (tuỳ chọn)
+    const ahead = PINYIN_STEPS[steps.total];
+    if (steps.today > 0 && ahead) {
+      const id = `pinyin-ahead-${steps.total}`;
+      tasks.push({
+        id,
+        title: `Học trước: ${ahead.title}`,
+        detail: `${ahead.detail} · tuỳ chọn, phần của ngày mai`,
+        to: sessionPath(id),
+        session: { kind: "pinyin-topic", topic: ahead.topic, step: steps.total },
+        done: null,
+      });
+    }
   }
 
-  // 3. Bài mới
-  if (phase === "pinyin" && day < LESSON_START_DAY) {
-    note = `Từ ngày thứ ${LESSON_START_DAY + 1} bạn sẽ bắt đầu Bài 1, học song song với pinyin.`;
+  // 3. Bài mới. Bắt đầu Bài 1 từ ngày thứ 3, hoặc sớm hơn nếu đã học trước đủ phần thanh điệu.
+  const lessonsUnlocked = pinyinDone || input.completed.length > 0 || day >= LESSON_START_DAY || steps.before >= LESSON_START_DAY;
+  const extraLesson = (l: (typeof ordered)[number], label: string): PlanTask => {
+    const id = `lesson-extra-${l.order}`;
+    return {
+      id,
+      title: `${label} Bài ${l.order}: ${l.title}`,
+      detail:
+        dueCount >= EXTRA_LESSON_LIMIT
+          ? `${l.wordCount} từ · tuỳ chọn. Còn ${dueCount} thẻ đến hạn, nên ôn trước`
+          : `${l.wordCount} từ · tuỳ chọn, chỉ khi bạn còn sức`,
+      to: sessionPath(id),
+      session: { kind: "lesson", lessonId: l.id },
+      done: null,
+    };
+  };
+  if (!lessonsUnlocked) {
+    note = `Từ ngày thứ ${LESSON_START_DAY + 1} bạn sẽ bắt đầu Bài 1, học song song với pinyin. Muốn nhanh hơn thì bấm «Học trước».`;
+    if (next && steps.today > 0) tasks.push(extraLesson(next, "Học trước"));
   } else if (next) {
     if (doneToday.length > 0) {
       const last = ordered.find((l) => l.id === doneToday[doneToday.length - 1].id);
       tasks.push({
         id: "lesson",
-        title: `Đã học Bài ${last?.order}: ${last?.title}`,
+        title: doneToday.length > 1 ? `Đã học ${doneToday.length} bài, mới nhất Bài ${last?.order}` : `Đã học Bài ${last?.order}: ${last?.title}`,
         to: sessionPath("lesson"),
         session: { kind: "lesson", lessonId: last?.id ?? next.id },
         done: true,
       });
-      if (dueCount < EXTRA_LESSON_LIMIT) {
-        tasks.push({
-          id: "lesson-extra",
-          title: `Học thêm Bài ${next.order}: ${next.title}`,
-          detail: `${next.wordCount} từ · tuỳ chọn, chỉ khi bạn còn sức`,
-          to: sessionPath("lesson-extra"),
-          session: { kind: "lesson", lessonId: next.id },
-          done: null,
-        });
-      }
+      // Học trước bài tiếp theo: luôn cho phép, trừ khi tồn đọng quá nhiều thẻ
+      if (dueCount <= BACKLOG_LIMIT) tasks.push(extraLesson(next, "Học trước"));
     } else if (dueCount > BACKLOG_LIMIT) {
       tasks.push({
         id: "lesson",
@@ -263,7 +323,18 @@ export function buildDailyPlan(input: PlanInput): DailyPlan {
       ? undefined
       : { done: doneIds.size, total: ordered.length, label: `${doneIds.size}/${ordered.length} bài` };
 
-  return { phase, phaseLabel, progress, tasks, note };
+  // So với nhịp mặc định (1 bước pinyin + 1 bài mỗi ngày): chỉ báo khi đang đi trước
+  const expectedLessons = Math.max(0, day - LESSON_START_DAY + (doneToday.length > 0 ? 1 : 0));
+  const lessonsAhead = doneIds.size - expectedLessons;
+  const stepsAhead = steps.total - Math.min(PINYIN_STEPS.length, day + (steps.today > 0 ? 1 : 0));
+  const pace =
+    lessonsAhead > 0
+      ? `Đang đi trước lộ trình ${lessonsAhead} bài 🚀`
+      : stepsAhead > 0 && !pinyinDone
+        ? `Đang đi trước lộ trình ${stepsAhead} phần pinyin 🚀`
+        : undefined;
+
+  return { phase, phaseLabel, progress, tasks, note, pace };
 }
 
 /** Số việc bắt buộc đã xong / tổng số (việc tuỳ chọn không tính). */

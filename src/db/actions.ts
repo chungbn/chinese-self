@@ -1,7 +1,8 @@
 import { LESSON_BY_ID } from "../data";
 import { getScheduler, type Grade } from "../srs/scheduler";
+import { deriveSteps } from "../lib/plan";
 import { dayKey } from "../lib/streak";
-import { db, SKILLS, type CardRow, type DayRow, type LessonRow, type ReviewRow } from "./db";
+import { db, SKILLS, type CardRow, type DayRow, type LessonRow, type MetaRow, type ReviewRow } from "./db";
 
 export { dayKey };
 
@@ -57,6 +58,8 @@ type Backup = {
   reviews: ReviewRow[];
   lessons: LessonRow[];
   days?: DayRow[];
+  /** Ngày bắt đầu, tiến độ pinyin, số câu luyện nghe… (giá trị đều là JSON thuần) */
+  meta?: MetaRow[];
 };
 
 export async function exportBackup(): Promise<string> {
@@ -68,6 +71,7 @@ export async function exportBackup(): Promise<string> {
     reviews: await db.reviews.toArray(),
     lessons: await db.lessons.toArray(),
     days: await db.days.toArray(),
+    meta: await db.meta.toArray(),
   };
   return JSON.stringify(data);
 }
@@ -90,12 +94,17 @@ export async function importBackup(json: string): Promise<void> {
     updatedAt: d(x.updatedAt) as Date,
     completedAt: (d(x.completedAt) ?? undefined) as Date | undefined,
   }));
-  await db.transaction("rw", [db.cards, db.reviews, db.lessons, db.days], async () => {
+  await db.transaction("rw", [db.cards, db.reviews, db.lessons, db.days, db.meta], async () => {
     await Promise.all([db.cards.clear(), db.reviews.clear(), db.lessons.clear(), db.days.clear()]);
     await db.cards.bulkAdd(cards);
     await db.reviews.bulkAdd(reviews);
     await db.lessons.bulkAdd(lessons);
     await db.days.bulkAdd(days);
+    // Bản sao lưu cũ không có meta thì giữ nguyên meta hiện tại
+    if (data.meta) {
+      await db.meta.clear();
+      await db.meta.bulkAdd(data.meta);
+    }
   });
 }
 
@@ -147,6 +156,23 @@ export async function recordPinyinTab(tab: string, now = new Date()): Promise<vo
   await db.transaction("rw", db.meta, async () => {
     const cur = ((await db.meta.get(key))?.value as string[] | undefined) ?? [];
     if (!cur.includes(tab)) await db.meta.put({ key, value: [...cur, tab] });
+  });
+}
+
+/** Đọc lịch sử bước pinyin; dữ liệu cũ chưa có thì dựng lại từ các phần đã học theo ngày. */
+export async function loadPinyinSteps(): Promise<string[]> {
+  const row = await db.meta.get("pinyinSteps");
+  if (row) return row.value as string[];
+  const tabs = await db.meta.where("key").startsWith("pinyinTabs:").toArray();
+  return deriveSteps(tabs.map((r) => ({ day: r.key.slice("pinyinTabs:".length), tabs: (r.value as string[]) ?? [] })));
+}
+
+/** Ghi nhận học xong bước pinyin thứ `step` (bỏ qua nếu bước đó đã được ghi). */
+export async function completePinyinStep(step: number, now = new Date()): Promise<void> {
+  await db.transaction("rw", db.meta, async () => {
+    const steps = await loadPinyinSteps();
+    if (steps.length === step) await db.meta.put({ key: "pinyinSteps", value: [...steps, dayKey(now)] });
+    else if (!(await db.meta.get("pinyinSteps"))) await db.meta.put({ key: "pinyinSteps", value: steps });
   });
 }
 

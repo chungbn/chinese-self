@@ -43,6 +43,19 @@ await planHeading().waitFor();
 await page.waitForTimeout(500);
 assert((await page.locator("text=/\\d+\\/\\d+ việc/").textContent()) === "2/2 việc", "trang chủ: 2/2 việc");
 
+// ---- Học trước: làm luôn phần của ngày mai
+await page.getByRole("link", { name: /Học trước: Ôn lại 4 thanh/ }).click();
+await page.getByRole("button", { name: "Đã học xong ✓" }).click();
+await page.getByText("Đã học xong phần này").waitFor();
+assert(page.url().includes("#/session/pinyin-ahead-1"), "mở phần học trước trong chế độ tập trung");
+await page.getByRole("link", { name: "Về kế hoạch hôm nay" }).last().click();
+await planHeading().waitFor();
+await page.getByRole("link", { name: /Học trước: Thanh mẫu/ }).waitFor();
+assert(await page.getByRole("link", { name: /Học trước Bài 1/ }).isVisible(), "học trước đủ thanh điệu thì mở được Bài 1");
+assert(await page.getByText(/Đang đi trước lộ trình 1 phần pinyin/).isVisible(), "báo đang đi trước lộ trình");
+assert((await page.locator("text=/\\d+\\/\\d+ việc/").textContent()) === "2/2 việc", "việc học trước không làm tăng việc bắt buộc");
+await page.screenshot({ path: `${OUT}/s3b-ahead.png`, fullPage: true });
+
 // ---- Giả lập ngày 3: có bài học
 await page.evaluate(async () => {
   const db = await new Promise((res) => { const r = indexedDB.open("chinese-self"); r.onsuccess = () => res(r.result); });

@@ -26,6 +26,8 @@ await page.screenshot({ path: `${OUT}/02-pinyin.png`, fullPage: true });
 await page.goto(BASE + "#/lessons/hsk1-01");
 await page.screenshot({ path: `${OUT}/03-lesson.png`, fullPage: true });
 await page.getByRole("link", { name: "Bắt đầu học" }).click();
+await page.waitForURL(/\/learn/);
+await page.waitForTimeout(300);
 for (let i = 0; i < 17; i++) await page.keyboard.press("ArrowRight");
 await page.screenshot({ path: `${OUT}/04-quiz.png`, fullPage: true });
 

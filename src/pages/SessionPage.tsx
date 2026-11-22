@@ -2,7 +2,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { getWord, LESSON_BY_ID } from "../data";
-import { recordPinyinTab } from "../db/actions";
+import { completePinyinStep, recordPinyinTab } from "../db/actions";
 import { db } from "../db/db";
 import { useDailyPlan } from "../hooks/useDailyPlan";
 import { useNow } from "../hooks/useNow";
@@ -58,7 +58,7 @@ function Session({ taskId }: { taskId: string }) {
           </Link>
         </div>
       )}
-      {task?.session.kind === "pinyin-topic" && <TopicSession topic={task.session.topic} taskId={task.id} />}
+      {task?.session.kind === "pinyin-topic" && <TopicSession topic={task.session.topic} step={task.session.step} taskId={task.id} />}
       {task?.session.kind === "drill" && <DrillSession mode={task.session.mode} taskId={task.id} />}
       {task?.session.kind === "review" && <ReviewSession doneActions={<NextStep currentId={task.id} />} />}
       {task?.session.kind === "lesson" && <LessonSession task={task} lessonId={task.session.lessonId} />}
@@ -97,16 +97,17 @@ function NextStep({ currentId }: { currentId: string }) {
 
 const TOPIC_INTRO: Record<PinyinTopic, string> = {
   tones: "Đọc mô tả từng thanh, rồi bấm nghe các bộ âm và đọc to theo. Chú ý độ cao bắt đầu của thanh 1 và thanh 4.",
-  initials: "Bấm từng ô để nghe, đọc to theo. Hôm nay chỉ cần học phụ âm đầu.",
-  "finals-1": "Bấm từng ô để nghe, đọc to theo. Hôm nay học vần đơn và vần ghép cơ bản.",
-  "finals-2": "Bấm từng ô để nghe, đọc to theo. Hôm nay học các vần bắt đầu bằng i, u, ü.",
+  initials: "Bấm từng ô để nghe, đọc to theo. Phần này chỉ học phụ âm đầu.",
+  "finals-1": "Bấm từng ô để nghe, đọc to theo. Phần này học vần đơn và vần ghép cơ bản.",
+  "finals-2": "Bấm từng ô để nghe, đọc to theo. Phần này học các vần bắt đầu bằng i, u, ü.",
   pitfalls: "Đọc các lỗi hay gặp, rồi nghe kỹ từng cặp âm và đọc to để phân biệt.",
   sandhi: "Đọc từng quy tắc, bấm nghe ví dụ. Dấu thanh viết không đổi, chỉ cách đọc thay đổi.",
 };
 
-function TopicSession({ topic, taskId }: { topic: PinyinTopic; taskId: string }) {
+function TopicSession({ topic, step, taskId }: { topic: PinyinTopic; step: number; taskId: string }) {
   const [finished, setFinished] = useState(false);
   const finish = async () => {
+    await completePinyinStep(step);
     await recordPinyinTab(topic);
     // Các phần không bị chia nhỏ thì ghi luôn tab chung (dùng cho lộ trình và chế độ luyện nghe)
     if (!["initials", "finals-1", "finals-2"].includes(topic)) await recordPinyinTab(TOPIC_TAB[topic]);
@@ -117,7 +118,7 @@ function TopicSession({ topic, taskId }: { topic: PinyinTopic; taskId: string })
     return (
       <div className="card space-y-3 py-6 text-center">
         <div className="text-4xl">✅</div>
-        <div className="font-semibold">Đã học xong phần hôm nay</div>
+        <div className="font-semibold">Đã học xong phần này</div>
         <NextStep currentId={taskId} />
       </div>
     );

@@ -1,9 +1,9 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useState } from "react";
 import { LESSONS } from "../data";
-import { ensureStartedAt } from "../db/actions";
+import { ensureStartedAt, loadPinyinSteps } from "../db/actions";
 import { db } from "../db/db";
-import { buildDailyPlan, type DailyPlan, type PinyinTab } from "../lib/plan";
+import { buildDailyPlan, type DailyPlan } from "../lib/plan";
 import { dayKey } from "../lib/streak";
 
 const LESSON_INFO = LESSONS.map((l) => ({ id: l.id, order: l.order, title: l.title, wordCount: l.wordIds.length }));
@@ -19,7 +19,7 @@ export function useDailyPlan(now: Date): DailyPlan | null {
   const data = useLiveQuery(async () => {
     const startOfDay = new Date(now);
     startOfDay.setHours(0, 0, 0, 0);
-    const [dueCount, totalCards, reviewedToday, completed, pinyinDone, drill, tabs, allTabs] = await Promise.all([
+    const [dueCount, totalCards, reviewedToday, completed, pinyinDone, drill, pinyinSteps, allTabs] = await Promise.all([
       // Dùng thời điểm thực lúc truy vấn: thẻ vừa tạo (đến hạn ngay) phải được tính luôn
       db.cards.where("dueAt").belowOrEqual(new Date()).count(),
       db.cards.count(),
@@ -27,7 +27,7 @@ export function useDailyPlan(now: Date): DailyPlan | null {
       db.lessons.toArray(),
       db.meta.get("pinyinDone"),
       db.meta.get(`drill:${today}`),
-      db.meta.get(`pinyinTabs:${today}`),
+      loadPinyinSteps(),
       db.meta.where("key").startsWith("pinyinTabs:").toArray(),
     ]);
     return {
@@ -37,7 +37,7 @@ export function useDailyPlan(now: Date): DailyPlan | null {
       completed,
       pinyinDone: pinyinDone?.value === true,
       drillToday: (drill?.value as number | undefined) ?? 0,
-      pinyinTabsToday: (tabs?.value as PinyinTab[] | undefined) ?? [],
+      pinyinSteps,
       pinyinTopicsSeen: [...new Set(allTabs.flatMap((r) => (r.value as string[]) ?? []))],
     };
   }, [now.getTime(), today]);

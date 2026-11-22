@@ -126,6 +126,7 @@ function PlanCard({ plan, completedToday }: { plan: DailyPlan; completedToday: b
             : "Hôm nay đã được tính hoàn thành ✓ Có thẻ mới đến hạn, ôn thêm nếu bạn còn thời gian."}
         </p>
       )}
+      {plan.pace && <p className="text-sm font-medium text-green-700 dark:text-green-400">{plan.pace}</p>}
       {plan.note && <p className="text-sm text-stone-500">{plan.note}</p>}
     </section>
   );
